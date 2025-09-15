@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CWRU Game Checkout System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    </style>
+</head>
+<body class="bg-stone-50 text-gray-800">
+
+    <!-- Firebase SDK Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        setLogLevel('debug');
+        
+        // Define local variables for the environment globals to prevent "temporal dead zone" errors.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBqeaMxn_7ctpLvZRKkte-KCou5CRk4Skw",
+            authDomain: "cwru-game-zone.firebaseapp.com",
+            projectId: "cwru-game-zone",
+            storageBucket: "cwru-game-zone.firebasestorage.app",
+            messagingSenderId: "958844565623",
+            appId: "1:958844565623:web:3b922d00453ec211e92e72",
+            measurementId: "G-NZ5286CJLR"
+        };
+        
+        let db, auth;
+        let userId = null;
+
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+
+        // --- AUTHENTICATION ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                console.log("Authenticated as user:", userId);
+                initApp();
+            } else {
+                console.log("No user signed in. Attempting to sign in...");
+                try {
+                    if (initialAuthToken) {
+                        try {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } catch (tokenError) {
+                            console.error("Custom token sign-in failed. Falling back to anonymous sign-in.", tokenError);
+                            await signInAnonymously(auth);
+                        }
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Authentication failed:", error);
+                }
+            }
+        });
+
+        const initApp = () => {
+            const studentIdInput = document.getElementById('studentId');
+            const gameNameSelect = document.getElementById('gameName');
+            const checkinBtn = document.getElementById('checkinBtn');
+            const sessionTableBody = document.getElementById('sessionTableBody');
+            const waitlistTableBody = document.getElementById('waitlistTableBody');
+            const historyTableBody = document.getElementById('historyTableBody');
+            const noActiveSessionsMessage = document.getElementById('noActiveSessionsMessage');
+            const noWaitlistMessage = document.getElementById('noWaitlistMessage');
+            const noHistoryMessage = document.getElementById('noHistoryMessage');
+            const summaryModal = document.getElementById('summaryModal');
+            const closeModalBtn = document.getElementById('closeModalBtn');
+            const modalContent = document.getElementById('modalContent');
+            const waitlistModal = document.getElementById('waitlistModal');
+            const waitlistMessage = document.getElementById('waitlistMessage');
+            const closeWaitlistModalBtn = document.getElementById('closeWaitlistModalBtn');
+            const scoreModal = document.getElementById('scoreModal');
+            const scoreForm = document.getElementById('scoreForm');
+            const finalScoreInput = document.getElementById('finalScore');
+            const submitScoreBtn = document.getElementById('submitScoreBtn');
+            const modalTitle = document.getElementById('modalTitle');
+            const closeModalScoreBtn = document.getElementById('closeModalScoreBtn');
+
+            const gameDefinitions = {
+                "Ping Pong": 2,
+                "Pool": 1,
+                "Skew Ball": 1,
+                "Star Wars": 1,
+                "UNO": 2,
+                "Catan": 1
+            };
+            
+            const renderSessions = (sessions) => {
+                sessionTableBody.innerHTML = '';
+                if (sessions.length === 0) {
+                    noActiveSessionsMessage.classList.remove('hidden');
+                } else {
+                    noActiveSessionsMessage.classList.add('hidden');
+                    sessions.forEach(session => {
+                        const row = document.createElement('tr');
+                        row.className = 'hover:bg-gray-50';
+                        const checkinTime = session.checkInTime ? new Date(session.checkInTime.toDate()).toLocaleString() : 'Pending...';
+                        
+                        row.innerHTML = `
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${session.studentId}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${session.gameName}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${checkinTime}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <button data-id="${session.id}" class="checkout-btn text-red-600 hover:text-red-900 font-semibold">Check Out</button>
+                            </td>
+                        `;
+                        sessionTableBody.appendChild(row);
+                    });
+                }
+            };
+
+            const renderWaitlist = (waitlist) => {
+                waitlistTableBody.innerHTML = '';
+                if (waitlist.length === 0) {
+                    noWaitlistMessage.classList.remove('hidden');
+                } else {
+                    noWaitlistMessage.classList.add('hidden');
+                    waitlist.forEach(item => {
+                        const row = document.createElement('tr');
+                        row.className = 'hover:bg-gray-50';
+                        const waitlistTime = item.waitlistTime ? new Date(item.waitlistTime.toDate()).toLocaleString() : 'Pending...';
+                        
+                        row.innerHTML = `
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.studentId}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.gameName}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${waitlistTime}</td>
+                        `;
+                        waitlistTableBody.appendChild(row);
+                    });
+                }
+            };
+            
+            const renderHistory = (history) => {
+                historyTableBody.innerHTML = '';
+                if (history.length === 0) {
+                    noHistoryMessage.classList.remove('hidden');
+                } else {
+                    noHistoryMessage.classList.add('hidden');
+                    history.forEach(session => {
+                        const row = document.createElement('tr');
+                        row.className = 'hover:bg-gray-50';
+                        const checkinTime = session.checkInTime ? new Date(session.checkInTime.toDate()).toLocaleString() : 'N/A';
+                        const checkoutTime = session.checkOutTime ? new Date(session.checkOutTime.toDate()).toLocaleString() : 'N/A';
+                        
+                        row.innerHTML = `
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${session.studentId}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${session.gameName}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${checkinTime}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${session.duration} min</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${checkoutTime}</td>
+                        `;
+                        historyTableBody.appendChild(row);
+                    });
+                }
+            };
+
+            const populateGameSelect = async () => {
+                gameNameSelect.innerHTML = '';
+                const gameInstancesRef = collection(db, `artifacts/${appId}/public/data/games`);
+                const gamesSnapshot = await getDocs(gameInstancesRef);
+                const gameInstances = {};
+                if (gamesSnapshot.empty) {
+                    // Initialize if the collection is empty
+                    for (const game in gameDefinitions) {
+                        gameInstances[game] = gameDefinitions[game];
+                        await setDoc(doc(db, `artifacts/${appId}/public/data/games`, game), { count: gameDefinitions[game] });
+                    }
+                } else {
+                    gamesSnapshot.forEach(doc => {
+                        gameInstances[doc.id] = doc.data().count;
+                    });
+                }
+                
+                for (const game in gameDefinitions) {
+                    const option = document.createElement('option');
+                    option.value = game;
+                    option.textContent = `${game} (${gameInstances[game] || 0} available)`;
+                    gameNameSelect.appendChild(option);
+                }
+            };
+
+            const handleCheckin = async () => {
+                const studentId = studentIdInput.value.trim();
+                const gameName = gameNameSelect.value;
+                
+                if (!studentId || !gameName) {
+                    return;
+                }
+
+                const gameRef = doc(db, `artifacts/${appId}/public/data/games`, gameName);
+                const gameDoc = await getDoc(gameRef);
+                const availableCount = gameDoc.exists() ? gameDoc.data().count : 0;
+
+                if (availableCount > 0) {
+                    // Game is available, check it out
+                    const newSession = {
+                        studentId: studentId,
+                        gameName: gameName,
+                        checkInTime: serverTimestamp()
+                    };
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/active-sessions`), newSession);
+                    await updateDoc(gameRef, { count: availableCount - 1 });
+                } else {
+                    // Game is not available, add to waitlist
+                    const waitlistItem = {
+                        studentId: studentId,
+                        gameName: gameName,
+                        waitlistTime: serverTimestamp()
+                    };
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/waitlist`), waitlistItem);
+                    waitlistMessage.textContent = `A game is currently unavailable. Student ID ${studentId} has been added to the waitlist for ${gameName}.`;
+                    waitlistModal.classList.remove('hidden');
+                }
+                studentIdInput.value = '';
+                populateGameSelect(); // Re-render to update counts
+            };
+
+            const handleCheckout = async (event) => {
+                const target = event.target;
+                if (target.classList.contains('checkout-btn')) {
+                    const sessionId = target.dataset.id;
+                    const sessionRef = doc(db, `artifacts/${appId}/public/data/active-sessions`, sessionId);
+                    const sessionDoc = await getDoc(sessionRef);
+                    if (!sessionDoc.exists()) {
+                        return;
+                    }
+                    const session = { ...sessionDoc.data(), id: sessionDoc.id };
+                    const checkOutTime = new Date();
+                    const checkinDate = new Date(session.checkInTime.toDate());
+                    const durationMs = checkOutTime - checkinDate;
+                    const durationMinutes = Math.round(durationMs / 60000);
+                    
+                    const completedSession = {
+                        studentId: session.studentId,
+                        gameName: session.gameName,
+                        checkInTime: session.checkInTime,
+                        checkOutTime: serverTimestamp(),
+                        duration: durationMinutes
+                    };
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/session-history`), completedSession);
+                    await deleteDoc(sessionRef);
+
+                    modalTitle.textContent = session.gameName;
+                    modalContent.innerHTML = `
+                        <p><span class="font-semibold">Student ID:</span> ${session.studentId}</p>
+                        <p><span class="font-semibold">Game:</span> ${session.gameName}</p>
+                        <p><span class="font-semibold">Check-in:</span> ${checkinDate.toLocaleString()}</p>
+                        <p><span class="font-semibold">Check-out:</span> ${checkOutTime.toLocaleString()}</p>
+                        <p><span class="font-semibold">Total Duration:</span> ${durationMinutes} minutes</p>
+                    `;
+                    summaryModal.classList.remove('hidden');
+
+                    // Show score input modal
+                    scoreForm.setAttribute('data-student-id', session.studentId);
+                    scoreForm.setAttribute('data-game-name', session.gameName);
+                    scoreModal.classList.remove('hidden');
+                    
+                    // Increment the game count
+                    const gameRef = doc(db, `artifacts/${appId}/public/data/games`, session.gameName);
+                    const gameDoc = await getDoc(gameRef);
+                    const availableCount = gameDoc.exists() ? gameDoc.data().count : 0;
+                    const newCount = availableCount + 1;
+                    await updateDoc(gameRef, { count: newCount });
+                    
+                    // Check the waitlist after checking the game back in.
+                    const waitlistQuery = query(collection(db, `artifacts/${appId}/public/data/waitlist`), where('gameName', '==', session.gameName), orderBy('waitlistTime'));
+                    const waitlistSnapshot = await getDocs(waitlistQuery);
+                    if (!waitlistSnapshot.empty) {
+                        const nextStudent = waitlistSnapshot.docs[0];
+                        await addDoc(collection(db, `artifacts/${appId}/public/data/active-sessions`), {
+                            studentId: nextStudent.data().studentId,
+                            gameName: nextStudent.data().gameName,
+                            checkInTime: serverTimestamp()
+                        });
+                        await deleteDoc(nextStudent.ref);
+                        // The game count will be decremented by the new checkin.
+                        await updateDoc(gameRef, { count: newCount - 1 });
+                    }
+
+                    populateGameSelect(); // Re-render to update counts.
+                }
+            };
+
+            const handleSubmitScore = async (event) => {
+                event.preventDefault();
+                const studentId = scoreForm.getAttribute('data-student-id');
+                const gameName = scoreForm.getAttribute('data-game-name');
+                const score = parseInt(finalScoreInput.value);
+
+                if (studentId && gameName && !isNaN(score)) {
+                    const leaderboardData = {
+                        studentId: studentId,
+                        gameName: gameName,
+                        score: score,
+                        timestamp: serverTimestamp()
+                    };
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/leaderboard`), leaderboardData);
+                }
+                finalScoreInput.value = '';
+                scoreModal.classList.add('hidden');
+            };
+
+            const handleCloseModal = () => {
+                summaryModal.classList.add('hidden');
+            };
+            
+            const handleCloseWaitlistModal = () => {
+                waitlistModal.classList.add('hidden');
+            };
+
+            const handleCloseScoreModal = () => {
+                scoreModal.classList.add('hidden');
+            };
+
+            // --- REAL-TIME LISTENERS (onSnapshot) ---
+            onSnapshot(collection(db, `artifacts/${appId}/public/data/active-sessions`), (snapshot) => {
+                const sessions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderSessions(sessions);
+            });
+            
+            onSnapshot(collection(db, `artifacts/${appId}/public/data/waitlist`), (snapshot) => {
+                const waitlist = snapshot.docs.map(doc => doc.data());
+                renderWaitlist(waitlist);
+            });
+            
+            onSnapshot(collection(db, `artifacts/${appId}/public/data/session-history`), (snapshot) => {
+                const history = snapshot.docs.map(doc => doc.data());
+                renderHistory(history);
+            });
+            
+            // New real-time listener for the game dropdown
+            onSnapshot(collection(db, `artifacts/${appId}/public/data/games`), (snapshot) => {
+                const gameInstances = {};
+                snapshot.docs.forEach(doc => {
+                    gameInstances[doc.id] = doc.data().count;
+                });
+                
+                gameNameSelect.innerHTML = '';
+                for (const game in gameDefinitions) {
+                    const option = document.createElement('option');
+                    option.value = game;
+                    option.textContent = `${game} (${gameInstances[game] || 0} available)`;
+                    gameNameSelect.appendChild(option);
+                }
+            });
+
+            checkinBtn.addEventListener('click', handleCheckin);
+            sessionTableBody.addEventListener('click', handleCheckout);
+            closeModalBtn.addEventListener('click', handleCloseModal);
+            closeWaitlistModalBtn.addEventListener('click', handleCloseWaitlistModal);
+            closeModalScoreBtn.addEventListener('click', handleCloseScoreModal);
+            scoreForm.addEventListener('submit', handleSubmitScore);
+            populateGameSelect();
+        };
+
+    </script>
+
+    <main class="container mx-auto px-4 py-8 md:py-16">
+
+        <header class="text-center mb-12 md:mb-16">
+            <img src="https://upload.wikimedia.org/wikipedia/en/thumb/b/bb/Case_Western_Reserve_Spartans_primary_logo.svg/1200px-Case_Western_Reserve_Spartans_primary_logo.svg.png" alt="CWRU Game Zone Logo" class="w-24 h-auto mx-auto mb-4 rounded-full">
+            <h1 class="text-4xl md:text-6xl font-bold text-gray-900 mb-2">CWRU Game Zone Checkout</h1>
+            <p class="lg:text-xl text-gray-600">Track and manage games with ease.</p>
+            <a href="dashboard.html" target="_blank" class="mt-4 inline-block px-4 py-2 bg-purple-600 text-white rounded-full text-sm font-semibold hover:bg-purple-700 transition-colors">
+                View Live Dashboard
+            </a>
+        </header>
+
+        <section id="checkout-form" class="bg-white p-6 md:p-8 rounded-lg shadow-lg border border-stone-200 mb-12 md:mb-16">
+            <h2 class="text-2xl font-bold mb-6">New Game Session</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 items-end">
+                <div>
+                    <label for="studentId" class="block text-sm font-medium text-gray-700">Student ID</label>
+                    <input type="text" id="studentId" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
+                </div>
+                <div>
+                    <label for="gameName" class="block text-sm font-medium text-gray-700">Game Name</label>
+                    <select id="gameName" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white">
+                        <!-- Games will be populated here by JavaScript -->
+                    </select>
+                </div>
+                <button id="checkinBtn" class="w-full md:w-auto px-6 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-colors">Check In</button>
+            </div>
+        </section>
+
+        <section id="active-sessions" class="mb-12 md:mb-16">
+            <h2 class="text-2xl font-bold mb-6">Active Sessions</h2>
+            <div class="bg-white rounded-lg shadow-lg border border-stone-200 overflow-hidden">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-stone-100">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Game Name</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-in Time</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessionTableBody" class="bg-white divide-y divide-gray-200">
+                        
+                    </tbody>
+                </table>
+            </div>
+            <div id="noActiveSessionsMessage" class="text-center text-gray-500 mt-8 hidden">
+                <p>No games are currently checked out.</p>
+            </div>
+        </section>
+        
+        <section id="waitlist" class="mb-12 md:mb-16">
+            <h2 class="text-2xl font-bold mb-6">Waitlist</h2>
+            <div class="bg-white rounded-lg shadow-lg border border-stone-200 overflow-hidden">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-stone-100">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Game Name</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waitlist Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="waitlistTableBody" class="bg-white divide-y divide-gray-200">
+                        
+                    </tbody>
+                </table>
+            </div>
+            <div id="noWaitlistMessage" class="text-center text-gray-500 mt-8 hidden">
+                <p>The waitlist is currently empty.</p>
+            </div>
+        </section>
+
+        <section id="session-history">
+            <h2 class="text-2xl font-bold mb-6">Session History</h2>
+            <div class="bg-white rounded-lg shadow-lg border border-stone-200 overflow-hidden">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-stone-100">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Game Name</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-in Time</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-out Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody" class="bg-white divide-y divide-gray-200">
+                        
+                    </tbody>
+                </table>
+            </div>
+            <div id="noHistoryMessage" class="text-center text-gray-500 mt-8 hidden">
+                <p>No past sessions to display.</p>
+            </div>
+        </section>
+
+        <!-- Custom Modal for Session Summary -->
+        <div id="summaryModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-white p-8 rounded-lg shadow-2xl max-w-sm w-full">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 id="modalTitle" class="text-2xl font-bold text-gray-900">Session Summary</h3>
+                    <button id="closeModalBtn" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                </div>
+                <div id="modalContent" class="text-gray-700 leading-relaxed">
+                    <!-- Dynamic content will be injected here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Custom Modal for Waitlist Notifications -->
+        <div id="waitlistModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-white p-8 rounded-lg shadow-2xl max-w-sm w-full text-center">
+                <h3 class="text-xl font-bold text-gray-900 mb-4">Notification</h3>
+                <p id="waitlistMessage" class="text-gray-700 mb-6"></p>
+                <button id="closeWaitlistModalBtn" class="px-6 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-colors">OK</button>
+            </div>
+        </div>
+        
+        <!-- Custom Modal for Score Input -->
+        <div id="scoreModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-white p-8 rounded-lg shadow-2xl max-w-sm w-full">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-2xl font-bold text-gray-900">Enter Score for Leaderboard</h3>
+                    <button id="closeModalScoreBtn" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                </div>
+                <form id="scoreForm" class="space-y-4">
+                    <div>
+                        <label for="finalScore" class="block text-sm font-medium text-gray-700">Final Score:</label>
+                        <input type="number" id="finalScore" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border" required>
+                    </div>
+                    <button type="submit" id="submitScoreBtn" class="w-full px-6 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 transition-colors">Submit Score</button>
+                </form>
+            </div>
+        </div>
+
+    </main>
+</body>
+</html>

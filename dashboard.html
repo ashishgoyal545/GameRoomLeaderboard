@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CWRU Game Zone Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
+
+        /* General body and typography styling for a dark theme */
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #0e141a; /* Deep charcoal background */
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 2.5rem;
+        }
+
+        /* Main header for the whole page */
+        .main-header {
+            width: 100%;
+            max-width: 1400px;
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .main-header h1 {
+            font-size: 3.75rem;
+            font-weight: 700;
+            color: #ffffff;
+            letter-spacing: 0.05em;
+        }
+
+        /* Responsive container for the dashboard content */
+        .dashboard-container {
+            width: 100%;
+            max-width: 1400px;
+            display: grid;
+            gap: 2.5rem;
+            grid-template-columns: 1fr;
+        }
+
+        @media (min-width: 1024px) {
+            .dashboard-container {
+                grid-template-columns: 1fr 1.5fr;
+            }
+        }
+
+        /* Shared card styling for different sections */
+        .card {
+            background-color: #1a2a3a;
+            border-radius: 1.5rem;
+            padding: 3rem;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+            width: 100%;
+        }
+
+        /* Headings for the card sections */
+        .card-heading {
+            text-align: center;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            color: #e5e7eb;
+        }
+        .card-heading::after {
+            content: '';
+            display: block;
+            width: 50px;
+            height: 4px;
+            background-color: #b91c1c; /* CWRU Red */
+            margin: 1rem auto 0;
+            border-radius: 2px;
+        }
+
+        /* Table styling for both lists */
+        .leaderboard-table, .active-sessions-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 0.75rem;
+        }
+
+        /* Table headers */
+        .leaderboard-table th, .active-sessions-table th {
+            text-align: left;
+            padding: 1.25rem 0.5rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #9ca3af;
+            border-bottom: 2px solid #374151;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Table rows and cells */
+        .leaderboard-table td, .active-sessions-table td {
+            padding: 1.5rem 1.5rem;
+            font-size: 1.6rem;
+            color: #e2e8f0;
+            background-color: #2d4154;
+            border-radius: 0.75rem;
+            vertical-align: middle;
+        }
+        
+        .active-sessions-table td {
+            background-color: #374151;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 1.4rem;
+        }
+
+        /* Specific row styling */
+        .leaderboard-table tbody tr, .active-sessions-table tbody tr {
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+        }
+        .leaderboard-table tbody tr:hover, .active-sessions-table tbody tr:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Highlighting for top 3 ranks */
+        .leaderboard-table tbody tr:nth-child(1) td { 
+            background-image: linear-gradient(to right, #b91c1c, #991b1b); /* CWRU Red Gradient */
+            color: #ffffff;
+            font-weight: 700;
+        }
+        .leaderboard-table tbody tr:nth-child(2) td { 
+            background-image: linear-gradient(to right, #4b5563, #374151);
+            color: #e5e7eb;
+            font-weight: 700;
+        }
+        .leaderboard-table tbody tr:nth-child(3) td { 
+            background-image: linear-gradient(to right, #6b7280, #4b5563);
+            color: #e5e7eb;
+            font-weight: 700;
+        }
+        
+        /* Rank column styling for medals/icons */
+        .rank-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding-left: 0;
+            width: 60px;
+        }
+        .rank-icon {
+            font-size: 2rem;
+            line-height: 1;
+        }
+        .rank-number {
+            font-size: 1.6rem;
+            font-weight: 700;
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        /* Game Filter Dropdown */
+        .game-filter-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 2rem;
+            align-items: center;
+            gap: 1rem;
+        }
+        .game-filter-container label {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #d1d5db;
+        }
+        .game-filter-container select {
+            background-color: #374151;
+            border: 1px solid #4b5563;
+            color: #d1d5db;
+            border-radius: 0.5rem;
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: all 0.2s;
+        }
+        .game-filter-container select:focus {
+            outline: none;
+            border-color: #b91c1c;
+            box-shadow: 0 0 0 2px rgba(185, 28, 28, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Firebase SDK Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, onSnapshot, collection, query, orderBy, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        setLogLevel('debug');
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyBqeaMxn_7ctpLvZRKkte-KCou5CRk4Skw",
+            authDomain: "cwru-game-zone.firebaseapp.com",
+            projectId: "cwru-game-zone",
+            storageBucket: "cwru-game-zone.firebasestorage.app",
+            messagingSenderId: "958844565623",
+            appId: "1:958844565623:web:3b922d00453ec211e92e72",
+            measurementId: "G-NZ5286CJLR"
+        };
+
+        let db, auth;
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+
+        const initApp = () => {
+            const leaderboardTableBody = document.getElementById('leaderboard-body');
+            const activeSessionsTableBody = document.getElementById('active-sessions-body');
+            const gameFilterSelect = document.getElementById('gameFilter');
+
+            const updateLeaderboard = (gameName) => {
+                let leaderboardQuery;
+                if (gameName === 'All Games') {
+                    leaderboardQuery = query(collection(db, `artifacts/${appId}/public/data/leaderboard`), orderBy("score", "desc"));
+                } else {
+                    leaderboardQuery = query(collection(db, `artifacts/${appId}/public/data/leaderboard`), where("gameName", "==", gameName), orderBy("score", "desc"));
+                }
+                
+                onSnapshot(leaderboardQuery, (snapshot) => {
+                    leaderboardTableBody.innerHTML = '';
+                    const scores = snapshot.docs.map(doc => doc.data());
+
+                    if (scores.length > 0) {
+                        scores.forEach((score, index) => {
+                            const row = document.createElement('tr');
+                            let rankCellContent;
+                            if (index === 0) {
+                                rankCellContent = `<span class="rank-icon">👑</span>`;
+                            } else if (index === 1) {
+                                rankCellContent = `<span class="rank-icon">🥈</span>`;
+                            } else if (index === 2) {
+                                rankCellContent = `<span class="rank-icon">🥉</span>`;
+                            } else {
+                                rankCellContent = `<span class="rank-number">${index + 1}</span>`;
+                            }
+
+                            row.innerHTML = `
+                                <td class="rank-cell">${rankCellContent}</td>
+                                <td>${score.studentId}</td>
+                                <td>${score.score}</td>
+                            `;
+                            leaderboardTableBody.appendChild(row);
+                        });
+                    } else {
+                        leaderboardTableBody.innerHTML = `<tr><td colspan="3" class="text-center text-xl text-gray-400 py-10">No scores to display for this game.</td></tr>`;
+                    }
+                });
+            };
+
+            const populateGameFilter = async () => {
+                const gameInstancesRef = collection(db, `artifacts/${appId}/public/data/games`);
+                const gamesSnapshot = await getDocs(gameInstancesRef);
+                
+                gameFilterSelect.innerHTML = '<option value="All Games">All Games</option>';
+                gamesSnapshot.forEach(doc => {
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = doc.id;
+                    gameFilterSelect.appendChild(option);
+                });
+
+                gameFilterSelect.addEventListener('change', (e) => {
+                    updateLeaderboard(e.target.value);
+                });
+
+                // Initial load
+                updateLeaderboard('All Games');
+            };
+
+            // --- REAL-TIME ACTIVE SESSIONS LISTENER ---
+            const sessionsQuery = query(collection(db, `artifacts/${appId}/public/data/active-sessions`));
+            onSnapshot(sessionsQuery, (snapshot) => {
+                activeSessionsTableBody.innerHTML = '';
+                const sessions = snapshot.docs.map(doc => doc.data());
+
+                if (sessions.length > 0) {
+                    sessions.forEach(session => {
+                        const row = document.createElement('tr');
+                        const checkinTime = session.checkInTime ? new Date(session.checkInTime.toDate()).toLocaleString() : 'Pending...';
+                        row.innerHTML = `
+                            <td>${session.studentId}</td>
+                            <td>${session.gameName}</td>
+                            <td>${checkinTime}</td>
+                        `;
+                        activeSessionsTableBody.appendChild(row);
+                    });
+                } else {
+                    activeSessionsTableBody.innerHTML = '<tr><td colspan="3" class="text-center text-xl text-gray-400 py-10">No games are currently being played.</td></tr>';
+                }
+            });
+            
+            populateGameFilter();
+        };
+
+        // --- AUTHENTICATION ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                console.log("Authenticated as user:", user.uid);
+                initApp();
+            } else {
+                console.log("No user signed in. Signing in anonymously...");
+                try {
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("Authentication failed:", error);
+                }
+            }
+        });
+    </script>
+    
+    <div class="main-header">
+        <h1>CWRU Game Zone Dashboard</h1>
+    </div>
+
+    <div class="dashboard-container">
+        <!-- Live Active Sessions Section -->
+        <div class="card">
+            <h1 class="card-heading">Currently Playing</h1>
+            <table class="active-sessions-table">
+                <thead>
+                    <tr>
+                        <th>Student ID</th>
+                        <th>Game</th>
+                        <th>Checked In At</th>
+                    </tr>
+                </thead>
+                <tbody id="active-sessions-body">
+                    <!-- Dynamic content injected here -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Leaderboard Section -->
+        <div class="card">
+            <h1 class="card-heading">Top Scores</h1>
+            <div class="game-filter-container">
+                <label for="gameFilter">Filter by Game</label>
+                <select id="gameFilter"></select>
+            </div>
+            <table class="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Student ID</th>
+                        <th>Score</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-body">
+                    <!-- Dynamic content injected here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

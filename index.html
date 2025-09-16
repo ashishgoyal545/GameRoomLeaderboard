@@ -170,9 +170,24 @@
                     });
                 }
             };
-            
-            const renderGameSelect = (gameInstances) => {
+
+            const populateGameSelect = async () => {
                 gameNameSelect.innerHTML = '';
+                const gameInstancesRef = collection(db, `artifacts/${appId}/public/data/games`);
+                const gamesSnapshot = await getDocs(gameInstancesRef);
+                const gameInstances = {};
+                if (gamesSnapshot.empty) {
+                    // Initialize if the collection is empty
+                    for (const game in gameDefinitions) {
+                        gameInstances[game] = gameDefinitions[game];
+                        await setDoc(doc(db, `artifacts/${appId}/public/data/games`, game), { count: gameDefinitions[game] });
+                    }
+                } else {
+                    gamesSnapshot.forEach(doc => {
+                        gameInstances[doc.id] = doc.data().count;
+                    });
+                }
+                
                 for (const game in gameDefinitions) {
                     const option = document.createElement('option');
                     option.value = game;
@@ -194,6 +209,7 @@
                 const availableCount = gameDoc.exists() ? gameDoc.data().count : 0;
 
                 if (availableCount > 0) {
+                    // Game is available, check it out
                     const newSession = {
                         studentId: studentId,
                         gameName: gameName,
@@ -202,6 +218,7 @@
                     await addDoc(collection(db, `artifacts/${appId}/public/data/active-sessions`), newSession);
                     await updateDoc(gameRef, { count: availableCount - 1 });
                 } else {
+                    // Game is not available, add to waitlist
                     const waitlistItem = {
                         studentId: studentId,
                         gameName: gameName,
@@ -212,6 +229,7 @@
                     waitlistModal.classList.remove('hidden');
                 }
                 studentIdInput.value = '';
+                populateGameSelect(); // Re-render to update counts
             };
 
             const handleCheckout = async (event) => {
@@ -249,16 +267,21 @@
                     `;
                     summaryModal.classList.remove('hidden');
 
+                    // Show score input modal
                     scoreForm.setAttribute('data-student-id', session.studentId);
                     scoreForm.setAttribute('data-game-name', session.gameName);
                     scoreModal.classList.remove('hidden');
-
+                    
+                    // Increment the game count
                     const gameRef = doc(db, `artifacts/${appId}/public/data/games`, session.gameName);
                     const gameDoc = await getDoc(gameRef);
                     const availableCount = gameDoc.exists() ? gameDoc.data().count : 0;
+                    const newCount = availableCount + 1;
+                    await updateDoc(gameRef, { count: newCount });
+                    
+                    // Check the waitlist after checking the game back in.
                     const waitlistQuery = query(collection(db, `artifacts/${appId}/public/data/waitlist`), where('gameName', '==', session.gameName), orderBy('waitlistTime'));
                     const waitlistSnapshot = await getDocs(waitlistQuery);
-
                     if (!waitlistSnapshot.empty) {
                         const nextStudent = waitlistSnapshot.docs[0];
                         await addDoc(collection(db, `artifacts/${appId}/public/data/active-sessions`), {
@@ -267,9 +290,11 @@
                             checkInTime: serverTimestamp()
                         });
                         await deleteDoc(nextStudent.ref);
-                    } else {
-                        await updateDoc(gameRef, { count: availableCount + 1 });
+                        // The game count will be decremented by the new checkin.
+                        await updateDoc(gameRef, { count: newCount - 1 });
                     }
+
+                    populateGameSelect(); // Re-render to update counts.
                 }
             };
 
@@ -311,7 +336,7 @@
             });
             
             onSnapshot(collection(db, `artifacts/${appId}/public/data/waitlist`), (snapshot) => {
-                const waitlist = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const waitlist = snapshot.docs.map(doc => doc.data());
                 renderWaitlist(waitlist);
             });
             
@@ -320,12 +345,20 @@
                 renderHistory(history);
             });
             
+            // New real-time listener for the game dropdown
             onSnapshot(collection(db, `artifacts/${appId}/public/data/games`), (snapshot) => {
                 const gameInstances = {};
                 snapshot.docs.forEach(doc => {
                     gameInstances[doc.id] = doc.data().count;
                 });
-                renderGameSelect(gameInstances);
+                
+                gameNameSelect.innerHTML = '';
+                for (const game in gameDefinitions) {
+                    const option = document.createElement('option');
+                    option.value = game;
+                    option.textContent = `${game} (${gameInstances[game] || 0} available)`;
+                    gameNameSelect.appendChild(option);
+                }
             });
 
             checkinBtn.addEventListener('click', handleCheckin);
@@ -334,6 +367,7 @@
             closeWaitlistModalBtn.addEventListener('click', handleCloseWaitlistModal);
             closeModalScoreBtn.addEventListener('click', handleCloseScoreModal);
             scoreForm.addEventListener('submit', handleSubmitScore);
+            populateGameSelect();
         };
 
     </script>

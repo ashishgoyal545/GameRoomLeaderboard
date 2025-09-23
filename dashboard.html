@@ -199,6 +199,7 @@
         
         setLogLevel('debug');
         
+        // Define local variables for the environment globals to prevent "temporal dead zone" errors.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
@@ -251,19 +252,20 @@
                             row.innerHTML = `
                                 <td class="rank-cell">${rankCellContent}</td>
                                 <td>${score.studentId}</td>
+                                <td>${score.studentName}</td>
                                 <td>${score.score}</td>
                             `;
                             leaderboardTableBody.appendChild(row);
                         });
                     } else {
-                        leaderboardTableBody.innerHTML = `<tr><td colspan="3" class="text-center text-xl text-gray-400 py-10">No scores to display for this game.</td></tr>`;
+                        leaderboardTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-xl text-gray-400 py-10">No scores to display for this game.</td></tr>`;
                     }
                 });
             };
 
             const populateGameFilter = async () => {
-                const gameInstancesRef = collection(db, `artifacts/${appId}/public/data/games`);
-                const gamesSnapshot = await getDocs(gameInstancesRef);
+                const gamesRef = collection(db, `artifacts/${appId}/public/data/games`);
+                const gamesSnapshot = await getDocs(gamesRef);
                 
                 gameFilterSelect.innerHTML = '<option value="All Games">All Games</option>';
                 gamesSnapshot.forEach(doc => {
@@ -293,13 +295,14 @@
                         const checkinTime = session.checkInTime ? new Date(session.checkInTime.toDate()).toLocaleString() : 'Pending...';
                         row.innerHTML = `
                             <td>${session.studentId}</td>
+                            <td>${session.studentName}</td>
                             <td>${session.gameName}</td>
                             <td>${checkinTime}</td>
                         `;
                         activeSessionsTableBody.appendChild(row);
                     });
                 } else {
-                    activeSessionsTableBody.innerHTML = '<tr><td colspan="3" class="text-center text-xl text-gray-400 py-10">No games are currently being played.</td></tr>';
+                    activeSessionsTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-xl text-gray-400 py-10">No games are currently being played.</td></tr>';
                 }
             });
             
@@ -334,6 +337,7 @@
                 <thead>
                     <tr>
                         <th>Student ID</th>
+                        <th>Student Name</th>
                         <th>Game</th>
                         <th>Checked In At</th>
                     </tr>
@@ -356,6 +360,7 @@
                     <tr>
                         <th>Rank</th>
                         <th>Student ID</th>
+                        <th>Student Name</th>
                         <th>Score</th>
                     </tr>
                 </thead>

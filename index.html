@@ -18,7 +18,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, serverTimestamp, orderBy, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         setLogLevel('debug');
@@ -50,6 +50,7 @@
             if (user) {
                 userId = user.uid;
                 console.log("Authenticated as user:", userId);
+                await initializeGames();
                 initApp();
             } else {
                 console.log("No user signed in. Attempting to sign in...");
@@ -70,8 +71,34 @@
             }
         });
 
-        const initApp = () => {
+        const gameDefinitions = {
+            "Ping Pong": 2,
+            "Pool": 1,
+            "Skew Ball": 1,
+            "Star Wars": 1,
+            "UNO": 2,
+            "Catan": 1
+        };
+
+        const initializeGames = async () => {
+            const gameInstancesRef = collection(db, `artifacts/${appId}/public/data/games`);
+            const gamesSnapshot = await getDocs(gameInstancesRef);
+            if (gamesSnapshot.empty) {
+                console.log("Games collection is empty. Initializing with default counts.");
+                const batch = writeBatch(db);
+                for (const game in gameDefinitions) {
+                    const gameRef = doc(db, `artifacts/${appId}/public/data/games`, game);
+                    batch.set(gameRef, { count: gameDefinitions[game] });
+                }
+                await batch.commit();
+            } else {
+                console.log("Games collection already exists. Skipping initialization.");
+            }
+        };
+
+        const initApp = async () => {
             const studentIdInput = document.getElementById('studentId');
+            const studentNameInput = document.getElementById('studentName');
             const gameNameSelect = document.getElementById('gameName');
             const checkinBtn = document.getElementById('checkinBtn');
             const sessionTableBody = document.getElementById('sessionTableBody');
@@ -92,15 +119,6 @@
             const submitScoreBtn = document.getElementById('submitScoreBtn');
             const modalTitle = document.getElementById('modalTitle');
             const closeModalScoreBtn = document.getElementById('closeModalScoreBtn');
-
-            const gameDefinitions = {
-                "Ping Pong": 2,
-                "Pool": 1,
-                "Skew Ball": 1,
-                "Star Wars": 1,
-                "UNO": 2,
-                "Catan": 1
-            };
             
             const renderSessions = (sessions) => {
                 sessionTableBody.innerHTML = '';
@@ -115,6 +133,7 @@
                         
                         row.innerHTML = `
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${session.studentId}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${session.studentName}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${session.gameName}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${checkinTime}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -139,6 +158,7 @@
                         
                         row.innerHTML = `
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.studentId}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.studentName}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.gameName}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${waitlistTime}</td>
                         `;
@@ -161,8 +181,8 @@
                         
                         row.innerHTML = `
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${session.studentId}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${session.studentName}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${session.gameName}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${checkinTime}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${session.duration} min</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${checkoutTime}</td>
                         `;
@@ -170,24 +190,9 @@
                     });
                 }
             };
-
-            const populateGameSelect = async () => {
+            
+            const renderGameSelect = (gameInstances) => {
                 gameNameSelect.innerHTML = '';
-                const gameInstancesRef = collection(db, `artifacts/${appId}/public/data/games`);
-                const gamesSnapshot = await getDocs(gameInstancesRef);
-                const gameInstances = {};
-                if (gamesSnapshot.empty) {
-                    // Initialize if the collection is empty
-                    for (const game in gameDefinitions) {
-                        gameInstances[game] = gameDefinitions[game];
-                        await setDoc(doc(db, `artifacts/${appId}/public/data/games`, game), { count: gameDefinitions[game] });
-                    }
-                } else {
-                    gamesSnapshot.forEach(doc => {
-                        gameInstances[doc.id] = doc.data().count;
-                    });
-                }
-                
                 for (const game in gameDefinitions) {
                     const option = document.createElement('option');
                     option.value = game;
@@ -198,9 +203,10 @@
 
             const handleCheckin = async () => {
                 const studentId = studentIdInput.value.trim();
+                const studentName = studentNameInput.value.trim();
                 const gameName = gameNameSelect.value;
                 
-                if (!studentId || !gameName) {
+                if (!studentId || !studentName || !gameName) {
                     return;
                 }
 
@@ -209,18 +215,18 @@
                 const availableCount = gameDoc.exists() ? gameDoc.data().count : 0;
 
                 if (availableCount > 0) {
-                    // Game is available, check it out
                     const newSession = {
                         studentId: studentId,
+                        studentName: studentName,
                         gameName: gameName,
                         checkInTime: serverTimestamp()
                     };
                     await addDoc(collection(db, `artifacts/${appId}/public/data/active-sessions`), newSession);
                     await updateDoc(gameRef, { count: availableCount - 1 });
                 } else {
-                    // Game is not available, add to waitlist
                     const waitlistItem = {
                         studentId: studentId,
+                        studentName: studentName,
                         gameName: gameName,
                         waitlistTime: serverTimestamp()
                     };
@@ -229,7 +235,7 @@
                     waitlistModal.classList.remove('hidden');
                 }
                 studentIdInput.value = '';
-                populateGameSelect(); // Re-render to update counts
+                studentNameInput.value = '';
             };
 
             const handleCheckout = async (event) => {
@@ -249,6 +255,7 @@
                     
                     const completedSession = {
                         studentId: session.studentId,
+                        studentName: session.studentName,
                         gameName: session.gameName,
                         checkInTime: session.checkInTime,
                         checkOutTime: serverTimestamp(),
@@ -260,6 +267,7 @@
                     modalTitle.textContent = session.gameName;
                     modalContent.innerHTML = `
                         <p><span class="font-semibold">Student ID:</span> ${session.studentId}</p>
+                        <p><span class="font-semibold">Student Name:</span> ${session.studentName}</p>
                         <p><span class="font-semibold">Game:</span> ${session.gameName}</p>
                         <p><span class="font-semibold">Check-in:</span> ${checkinDate.toLocaleString()}</p>
                         <p><span class="font-semibold">Check-out:</span> ${checkOutTime.toLocaleString()}</p>
@@ -267,46 +275,43 @@
                     `;
                     summaryModal.classList.remove('hidden');
 
-                    // Show score input modal
                     scoreForm.setAttribute('data-student-id', session.studentId);
+                    scoreForm.setAttribute('data-student-name', session.studentName);
                     scoreForm.setAttribute('data-game-name', session.gameName);
                     scoreModal.classList.remove('hidden');
-                    
-                    // Increment the game count
+
                     const gameRef = doc(db, `artifacts/${appId}/public/data/games`, session.gameName);
                     const gameDoc = await getDoc(gameRef);
                     const availableCount = gameDoc.exists() ? gameDoc.data().count : 0;
-                    const newCount = availableCount + 1;
-                    await updateDoc(gameRef, { count: newCount });
-                    
-                    // Check the waitlist after checking the game back in.
                     const waitlistQuery = query(collection(db, `artifacts/${appId}/public/data/waitlist`), where('gameName', '==', session.gameName), orderBy('waitlistTime'));
                     const waitlistSnapshot = await getDocs(waitlistQuery);
+
                     if (!waitlistSnapshot.empty) {
                         const nextStudent = waitlistSnapshot.docs[0];
                         await addDoc(collection(db, `artifacts/${appId}/public/data/active-sessions`), {
                             studentId: nextStudent.data().studentId,
+                            studentName: nextStudent.data().studentName,
                             gameName: nextStudent.data().gameName,
                             checkInTime: serverTimestamp()
                         });
                         await deleteDoc(nextStudent.ref);
-                        // The game count will be decremented by the new checkin.
-                        await updateDoc(gameRef, { count: newCount - 1 });
+                    } else {
+                        await updateDoc(gameRef, { count: availableCount + 1 });
                     }
-
-                    populateGameSelect(); // Re-render to update counts.
                 }
             };
 
             const handleSubmitScore = async (event) => {
                 event.preventDefault();
                 const studentId = scoreForm.getAttribute('data-student-id');
+                const studentName = scoreForm.getAttribute('data-student-name');
                 const gameName = scoreForm.getAttribute('data-game-name');
                 const score = parseInt(finalScoreInput.value);
 
-                if (studentId && gameName && !isNaN(score)) {
+                if (studentId && studentName && gameName && !isNaN(score)) {
                     const leaderboardData = {
                         studentId: studentId,
+                        studentName: studentName,
                         gameName: gameName,
                         score: score,
                         timestamp: serverTimestamp()
@@ -336,7 +341,7 @@
             });
             
             onSnapshot(collection(db, `artifacts/${appId}/public/data/waitlist`), (snapshot) => {
-                const waitlist = snapshot.docs.map(doc => doc.data());
+                const waitlist = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderWaitlist(waitlist);
             });
             
@@ -348,17 +353,16 @@
             // New real-time listener for the game dropdown
             onSnapshot(collection(db, `artifacts/${appId}/public/data/games`), (snapshot) => {
                 const gameInstances = {};
-                snapshot.docs.forEach(doc => {
-                    gameInstances[doc.id] = doc.data().count;
-                });
-                
-                gameNameSelect.innerHTML = '';
-                for (const game in gameDefinitions) {
-                    const option = document.createElement('option');
-                    option.value = game;
-                    option.textContent = `${game} (${gameInstances[game] || 0} available)`;
-                    gameNameSelect.appendChild(option);
+                if (snapshot.empty) {
+                    for (const game in gameDefinitions) {
+                        setDoc(doc(db, `artifacts/${appId}/public/data/games`, game), { count: gameDefinitions[game] });
+                    }
+                } else {
+                    snapshot.docs.forEach(doc => {
+                        gameInstances[doc.id] = doc.data().count;
+                    });
                 }
+                renderGameSelect(gameInstances);
             });
 
             checkinBtn.addEventListener('click', handleCheckin);
@@ -367,7 +371,6 @@
             closeWaitlistModalBtn.addEventListener('click', handleCloseWaitlistModal);
             closeModalScoreBtn.addEventListener('click', handleCloseScoreModal);
             scoreForm.addEventListener('submit', handleSubmitScore);
-            populateGameSelect();
         };
 
     </script>
@@ -385,10 +388,14 @@
 
         <section id="checkout-form" class="bg-white p-6 md:p-8 rounded-lg shadow-lg border border-stone-200 mb-12 md:mb-16">
             <h2 class="text-2xl font-bold mb-6">New Game Session</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 items-end">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 items-end">
                 <div>
                     <label for="studentId" class="block text-sm font-medium text-gray-700">Student ID</label>
                     <input type="text" id="studentId" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
+                </div>
+                <div>
+                    <label for="studentName" class="block text-sm font-medium text-gray-700">Student Name</label>
+                    <input type="text" id="studentName" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
                 </div>
                 <div>
                     <label for="gameName" class="block text-sm font-medium text-gray-700">Game Name</label>
@@ -407,6 +414,7 @@
                     <thead class="bg-stone-100">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student Name</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Game Name</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-in Time</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -429,6 +437,7 @@
                     <thead class="bg-stone-100">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student Name</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Game Name</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waitlist Time</th>
                         </tr>
@@ -450,8 +459,8 @@
                     <thead class="bg-stone-100">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student Name</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Game Name</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-in Time</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-out Time</th>
                         </tr>

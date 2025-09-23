@@ -119,6 +119,9 @@
             const submitScoreBtn = document.getElementById('submitScoreBtn');
             const modalTitle = document.getElementById('modalTitle');
             const closeModalScoreBtn = document.getElementById('closeModalScoreBtn');
+            const nameErrorModal = document.getElementById('nameErrorModal');
+            const nameErrorMessage = document.getElementById('nameErrorMessage');
+            const closeNameErrorModalBtn = document.getElementById('closeNameErrorModalBtn');
             
             const renderSessions = (sessions) => {
                 sessionTableBody.innerHTML = '';
@@ -201,6 +204,19 @@
                 }
             };
 
+            const isNameTaken = async (studentName) => {
+                const normalizedName = studentName.toLowerCase();
+                const checkCollections = ['active-sessions', 'waitlist', 'session-history'];
+                for (const collectionName of checkCollections) {
+                    const q = query(collection(db, `artifacts/${appId}/public/data/${collectionName}`), where('normalizedName', '==', normalizedName));
+                    const snapshot = await getDocs(q);
+                    if (!snapshot.empty) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
             const handleCheckin = async () => {
                 const studentId = studentIdInput.value.trim();
                 const studentName = studentNameInput.value.trim();
@@ -210,6 +226,13 @@
                     return;
                 }
 
+                if (await isNameTaken(studentName)) {
+                    nameErrorMessage.textContent = `The name "${studentName}" is already in use. Please choose a different name.`;
+                    nameErrorModal.classList.remove('hidden');
+                    return;
+                }
+
+                const normalizedName = studentName.toLowerCase();
                 const gameRef = doc(db, `artifacts/${appId}/public/data/games`, gameName);
                 const gameDoc = await getDoc(gameRef);
                 const availableCount = gameDoc.exists() ? gameDoc.data().count : 0;
@@ -218,6 +241,7 @@
                     const newSession = {
                         studentId: studentId,
                         studentName: studentName,
+                        normalizedName: normalizedName,
                         gameName: gameName,
                         checkInTime: serverTimestamp()
                     };
@@ -227,6 +251,7 @@
                     const waitlistItem = {
                         studentId: studentId,
                         studentName: studentName,
+                        normalizedName: normalizedName,
                         gameName: gameName,
                         waitlistTime: serverTimestamp()
                     };
@@ -256,6 +281,7 @@
                     const completedSession = {
                         studentId: session.studentId,
                         studentName: session.studentName,
+                        normalizedName: session.normalizedName,
                         gameName: session.gameName,
                         checkInTime: session.checkInTime,
                         checkOutTime: serverTimestamp(),
@@ -291,6 +317,7 @@
                         await addDoc(collection(db, `artifacts/${appId}/public/data/active-sessions`), {
                             studentId: nextStudent.data().studentId,
                             studentName: nextStudent.data().studentName,
+                            normalizedName: nextStudent.data().normalizedName,
                             gameName: nextStudent.data().gameName,
                             checkInTime: serverTimestamp()
                         });
@@ -309,9 +336,11 @@
                 const score = parseInt(finalScoreInput.value);
 
                 if (studentId && studentName && gameName && !isNaN(score)) {
+                    const normalizedName = studentName.toLowerCase();
                     const leaderboardData = {
                         studentId: studentId,
                         studentName: studentName,
+                        normalizedName: normalizedName,
                         gameName: gameName,
                         score: score,
                         timestamp: serverTimestamp()
@@ -334,6 +363,10 @@
                 scoreModal.classList.add('hidden');
             };
 
+            const handleCloseNameErrorModal = () => {
+                nameErrorModal.classList.add('hidden');
+            };
+
             // --- REAL-TIME LISTENERS (onSnapshot) ---
             onSnapshot(collection(db, `artifacts/${appId}/public/data/active-sessions`), (snapshot) => {
                 const sessions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -350,18 +383,12 @@
                 renderHistory(history);
             });
             
-            // New real-time listener for the game dropdown
+            // This is the real-time listener that updates the dropdown
             onSnapshot(collection(db, `artifacts/${appId}/public/data/games`), (snapshot) => {
                 const gameInstances = {};
-                if (snapshot.empty) {
-                    for (const game in gameDefinitions) {
-                        setDoc(doc(db, `artifacts/${appId}/public/data/games`, game), { count: gameDefinitions[game] });
-                    }
-                } else {
-                    snapshot.docs.forEach(doc => {
-                        gameInstances[doc.id] = doc.data().count;
-                    });
-                }
+                snapshot.docs.forEach(doc => {
+                    gameInstances[doc.id] = doc.data().count;
+                });
                 renderGameSelect(gameInstances);
             });
 
@@ -370,6 +397,7 @@
             closeModalBtn.addEventListener('click', handleCloseModal);
             closeWaitlistModalBtn.addEventListener('click', handleCloseWaitlistModal);
             closeModalScoreBtn.addEventListener('click', handleCloseScoreModal);
+            closeNameErrorModalBtn.addEventListener('click', handleCloseNameErrorModal);
             scoreForm.addEventListener('submit', handleSubmitScore);
         };
 
@@ -511,6 +539,15 @@
                     </div>
                     <button type="submit" id="submitScoreBtn" class="w-full px-6 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 transition-colors">Submit Score</button>
                 </form>
+            </div>
+        </div>
+        
+        <!-- Custom Modal for Name Error -->
+        <div id="nameErrorModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-white p-8 rounded-lg shadow-2xl max-w-sm w-full text-center">
+                <h3 class="text-xl font-bold text-gray-900 mb-4">Name Already in Use</h3>
+                <p id="nameErrorMessage" class="text-gray-700 mb-6"></p>
+                <button id="closeNameErrorModalBtn" class="px-6 py-2 bg-red-600 text-white rounded-md font-semibold hover:bg-red-700 transition-colors">OK</button>
             </div>
         </div>
 

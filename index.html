@@ -411,9 +411,15 @@
             // This is the real-time listener that updates the dropdown
             onSnapshot(collection(db, `artifacts/${appId}/public/data/games`), (snapshot) => {
                 const gameInstances = {};
-                snapshot.docs.forEach(doc => {
-                    gameInstances[doc.id] = doc.data().count;
-                });
+                if (snapshot.empty) {
+                    for (const game in gameDefinitions) {
+                        setDoc(doc(db, `artifacts/${appId}/public/data/games`, game), { count: gameDefinitions[game] });
+                    }
+                } else {
+                    snapshot.docs.forEach(doc => {
+                        gameInstances[doc.id] = doc.data().count;
+                    });
+                }
                 renderGameSelect(gameInstances);
             });
 
@@ -589,4 +595,3 @@
     </main>
 </body>
 </html>
-<!-- CHanges done-->>

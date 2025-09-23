@@ -122,6 +122,9 @@
             const nameErrorModal = document.getElementById('nameErrorModal');
             const nameErrorMessage = document.getElementById('nameErrorMessage');
             const closeNameErrorModalBtn = document.getElementById('closeNameErrorModalBtn');
+            const studentIdErrorModal = document.getElementById('studentIdErrorModal');
+            const studentIdErrorMessage = document.getElementById('studentIdErrorMessage');
+            const closeStudentIdErrorModalBtn = document.getElementById('closeStudentIdErrorModalBtn');
             
             const renderSessions = (sessions) => {
                 sessionTableBody.innerHTML = '';
@@ -206,9 +209,21 @@
 
             const isNameTaken = async (studentName) => {
                 const normalizedName = studentName.toLowerCase();
-                const checkCollections = ['active-sessions', 'waitlist', 'session-history'];
+                const checkCollections = ['active-sessions', 'waitlist'];
                 for (const collectionName of checkCollections) {
                     const q = query(collection(db, `artifacts/${appId}/public/data/${collectionName}`), where('normalizedName', '==', normalizedName));
+                    const snapshot = await getDocs(q);
+                    if (!snapshot.empty) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            const isStudentIdActive = async (studentId) => {
+                const checkCollections = ['active-sessions', 'waitlist'];
+                for (const collectionName of checkCollections) {
+                    const q = query(collection(db, `artifacts/${appId}/public/data/${collectionName}`), where('studentId', '==', studentId));
                     const snapshot = await getDocs(q);
                     if (!snapshot.empty) {
                         return true;
@@ -223,6 +238,12 @@
                 const gameName = gameNameSelect.value;
                 
                 if (!studentId || !studentName || !gameName) {
+                    return;
+                }
+                
+                if (await isStudentIdActive(studentId)) {
+                    studentIdErrorMessage.textContent = `Student ID "${studentId}" is currently checked in or on the waitlist. Please check out your current game first.`;
+                    studentIdErrorModal.classList.remove('hidden');
                     return;
                 }
 
@@ -367,6 +388,10 @@
                 nameErrorModal.classList.add('hidden');
             };
 
+            const handleCloseStudentIdErrorModal = () => {
+                studentIdErrorModal.classList.add('hidden');
+            };
+
             // --- REAL-TIME LISTENERS (onSnapshot) ---
             onSnapshot(collection(db, `artifacts/${appId}/public/data/active-sessions`), (snapshot) => {
                 const sessions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -398,6 +423,7 @@
             closeWaitlistModalBtn.addEventListener('click', handleCloseWaitlistModal);
             closeModalScoreBtn.addEventListener('click', handleCloseScoreModal);
             closeNameErrorModalBtn.addEventListener('click', handleCloseNameErrorModal);
+            closeStudentIdErrorModalBtn.addEventListener('click', handleCloseStudentIdErrorModal);
             scoreForm.addEventListener('submit', handleSubmitScore);
         };
 
@@ -548,6 +574,15 @@
                 <h3 class="text-xl font-bold text-gray-900 mb-4">Name Already in Use</h3>
                 <p id="nameErrorMessage" class="text-gray-700 mb-6"></p>
                 <button id="closeNameErrorModalBtn" class="px-6 py-2 bg-red-600 text-white rounded-md font-semibold hover:bg-red-700 transition-colors">OK</button>
+            </div>
+        </div>
+        
+        <!-- Custom Modal for Student ID Error -->
+        <div id="studentIdErrorModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-white p-8 rounded-lg shadow-2xl max-w-sm w-full text-center">
+                <h3 class="text-xl font-bold text-gray-900 mb-4">Student ID in Use</h3>
+                <p id="studentIdErrorMessage" class="text-gray-700 mb-6"></p>
+                <button id="closeStudentIdErrorModalBtn" class="px-6 py-2 bg-red-600 text-white rounded-md font-semibold hover:bg-red-700 transition-colors">OK</button>
             </div>
         </div>
 

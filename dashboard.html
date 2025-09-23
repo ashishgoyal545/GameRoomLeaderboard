@@ -222,44 +222,69 @@
             const leaderboardTableBody = document.getElementById('leaderboard-body');
             const activeSessionsTableBody = document.getElementById('active-sessions-body');
             const gameFilterSelect = document.getElementById('gameFilter');
+            const timeFilterSelect = document.getElementById('timeFilter');
 
-            const updateLeaderboard = (gameName) => {
-                let leaderboardQuery;
-                if (gameName === 'All Games') {
-                    leaderboardQuery = query(collection(db, `artifacts/${appId}/public/data/leaderboard`), orderBy("score", "desc"));
+            const renderLeaderboard = (scores) => {
+                leaderboardTableBody.innerHTML = '';
+                if (scores.length > 0) {
+                    scores.forEach((score, index) => {
+                        const row = document.createElement('tr');
+                        let rankCellContent;
+                        if (index === 0) {
+                            rankCellContent = `<span class="rank-icon">👑</span>`;
+                        } else if (index === 1) {
+                            rankCellContent = `<span class="rank-icon">🥈</span>`;
+                        } else if (index === 2) {
+                            rankCellContent = `<span class="rank-icon">🥉</span>`;
+                        } else {
+                            rankCellContent = `<span class="rank-number">${index + 1}</span>`;
+                        }
+
+                        row.innerHTML = `
+                            <td class="rank-cell">${rankCellContent}</td>
+                            <td>${score.studentId}</td>
+                            <td>${score.studentName}</td>
+                            <td>${score.score}</td>
+                        `;
+                        leaderboardTableBody.appendChild(row);
+                    });
                 } else {
-                    leaderboardQuery = query(collection(db, `artifacts/${appId}/public/data/leaderboard`), where("gameName", "==", gameName), orderBy("score", "desc"));
+                    leaderboardTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-xl text-gray-400 py-10">No scores to display for this game.</td></tr>`;
+                }
+            };
+            
+            const updateLeaderboard = (gameName, timeframe) => {
+                let leaderboardQuery;
+                let startTime;
+
+                if (timeframe === 'This Week') {
+                    const now = new Date();
+                    const day = now.getDay();
+                    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+                    startTime = new Date(now.setDate(diff)).setHours(0, 0, 0, 0);
+                } else if (timeframe === 'Today') {
+                    startTime = new Date().setHours(0, 0, 0, 0);
+                }
+
+                if (gameName === 'All Games') {
+                    if (timeframe === 'All Time') {
+                        leaderboardQuery = query(collection(db, `artifacts/${appId}/public/data/leaderboard`), orderBy("score", "desc"));
+                    } else {
+                        leaderboardQuery = query(collection(db, `artifacts/${appId}/public/data/leaderboard`), where('timestamp', '>=', new Date(startTime)), orderBy("timestamp"), orderBy("score", "desc"));
+                    }
+                } else {
+                    if (timeframe === 'All Time') {
+                        leaderboardQuery = query(collection(db, `artifacts/${appId}/public/data/leaderboard`), where("gameName", "==", gameName), orderBy("score", "desc"));
+                    } else {
+                        leaderboardQuery = query(collection(db, `artifacts/${appId}/public/data/leaderboard`), where("gameName", "==", gameName), where('timestamp', '>=', new Date(startTime)), orderBy("timestamp"), orderBy("score", "desc"));
+                    }
                 }
                 
                 onSnapshot(leaderboardQuery, (snapshot) => {
-                    leaderboardTableBody.innerHTML = '';
                     const scores = snapshot.docs.map(doc => doc.data());
-
-                    if (scores.length > 0) {
-                        scores.forEach((score, index) => {
-                            const row = document.createElement('tr');
-                            let rankCellContent;
-                            if (index === 0) {
-                                rankCellContent = `<span class="rank-icon">👑</span>`;
-                            } else if (index === 1) {
-                                rankCellContent = `<span class="rank-icon">🥈</span>`;
-                            } else if (index === 2) {
-                                rankCellContent = `<span class="rank-icon">🥉</span>`;
-                            } else {
-                                rankCellContent = `<span class="rank-number">${index + 1}</span>`;
-                            }
-
-                            row.innerHTML = `
-                                <td class="rank-cell">${rankCellContent}</td>
-                                <td>${score.studentId}</td>
-                                <td>${score.studentName}</td>
-                                <td>${score.score}</td>
-                            `;
-                            leaderboardTableBody.appendChild(row);
-                        });
-                    } else {
-                        leaderboardTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-xl text-gray-400 py-10">No scores to display for this game.</td></tr>`;
-                    }
+                    renderLeaderboard(scores);
+                }, (error) => {
+                    console.error("Error fetching leaderboard: ", error);
                 });
             };
 
@@ -275,12 +300,15 @@
                     gameFilterSelect.appendChild(option);
                 });
 
-                gameFilterSelect.addEventListener('change', (e) => {
-                    updateLeaderboard(e.target.value);
+                gameFilterSelect.addEventListener('change', () => {
+                    updateLeaderboard(gameFilterSelect.value, timeFilterSelect.value);
+                });
+                timeFilterSelect.addEventListener('change', () => {
+                    updateLeaderboard(gameFilterSelect.value, timeFilterSelect.value);
                 });
 
                 // Initial load
-                updateLeaderboard('All Games');
+                updateLeaderboard('All Games', 'All Time');
             };
 
             // --- REAL-TIME ACTIVE SESSIONS LISTENER ---
@@ -354,6 +382,12 @@
             <div class="game-filter-container">
                 <label for="gameFilter">Filter by Game</label>
                 <select id="gameFilter"></select>
+                <label for="timeFilter">Filter by Time</label>
+                <select id="timeFilter">
+                    <option value="All Time">All Time</option>
+                    <option value="This Week">This Week</option>
+                    <option value="Today">Today</option>
+                </select>
             </div>
             <table class="leaderboard-table">
                 <thead>
